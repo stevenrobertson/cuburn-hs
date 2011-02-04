@@ -18,7 +18,7 @@ Executable cuburn
                     , random
                     , GLUT
                     , StateVar
-                    , vect
+                    , SG
                     , vector
                     , bytestring
                     , pretty-show

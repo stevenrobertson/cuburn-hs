@@ -14,16 +14,15 @@ import Control.Applicative
 import Data.List (intercalate)
 
 import Data.ByteString (ByteString, useAsCString)
-import Data.Vect.Double
+import Data.SG
 import Variations
+
+type Point2 = Point2' Double
 
 peeki :: Ptr CInt -> IO Int
 peeki = fmap fromIntegral . peek
 peekd :: Ptr CDouble -> IO Double
 peekd = fmap realToFrac . peek
-
-instance Eq Vec2 where
-    (Vec2 a1 a2) == (Vec2 b1 b2) = a1 == b1 && a2 == b2
 
 data RGBColor = RGBColor Double Double Double deriving (Eq, Ord, Show)
 data RGBAColor = RGBAColor Double Double Double Double deriving (Eq, Ord, Show)
@@ -157,8 +156,8 @@ data Genome = Genome
     , gnWidth           :: Int
     , gnHeight          :: Int
     , gnSpatialOversample :: Int
-    , gnCenter          :: Vec2
-    , gnRotCenter       :: Vec2
+    , gnCenter          :: Point2
+    , gnRotCenter       :: Point2
     , gnRotate          :: Double
     , gnVibrancy        :: Double
     -- skipped: hue_rotation
@@ -211,8 +210,8 @@ instance Storable Genome where
                 <*> peeki ((#ptr flam3_genome, width) ptr)
                 <*> peeki ((#ptr flam3_genome, height) ptr)
                 <*> peeki ((#ptr flam3_genome, spatial_oversample) ptr)
-                <*> readVec2 ((#ptr flam3_genome, center) ptr)
-                <*> readVec2 ((#ptr flam3_genome, rot_center) ptr)
+                <*> readPoint2 ((#ptr flam3_genome, center) ptr)
+                <*> readPoint2 ((#ptr flam3_genome, rot_center) ptr)
                 <*> peekd ((#ptr flam3_genome, rotate) ptr)
                 <*> peekd ((#ptr flam3_genome, vibrancy) ptr)
                 <*> (#peek flam3_genome, background) ptr
@@ -235,9 +234,9 @@ instance Storable Genome where
         getPalMode :: CInt -> PaletteMode
         getPalMode (#const flam3_palette_mode_step) = PaletteStep
         getPalMode (#const flam3_palette_mode_linear) = PaletteLinear
-        readVec2 ptr' = do
+        readPoint2 ptr' = do
             x:y:[] <- peekArray 2 ptr'
-            return $ Vec2 x y
+            return $ Point2 (x, y)
 
 foreign import ccall unsafe "flam3.h flam3_parse_xml2"
     flam3Parse' :: CString -> CString -> CInt -> Ptr CInt -> IO (Ptr Genome)
