@@ -1,5 +1,6 @@
 module Main where
 
+import Control.Applicative
 import Control.Concurrent
 import System.Random
 
@@ -9,11 +10,13 @@ import Graphics.UI.GLUT
 import Text.Show.Pretty (ppShow)
 
 import Flam3
+import Render
 
 main = do
     Just (genp, ct) <- flam3Parse =<<
-        B.readFile "testdata/electricsheep.244.23669.flam3"
-    -- putStrLn . ppShow =<< flam3Peek (genp, ct)
+        B.readFile "testdata/sierpinski.flame"
+        -- "testdata/electricsheep.244.23669.flam3"
+    [genome] <- flam3Peek (genp, ct)
 
     (progname, args) <- getArgsAndInitialize
     initialDisplayCapabilities $= [ With  DisplayRGB
@@ -27,7 +30,7 @@ main = do
     windowPosition $= Position (fromIntegral $ scrW `div` 2 - 400)
                                (fromIntegral $ scrH `div` 2 - 300)
 
-    clearColor $= Color4 0 0 0 0
+    clearColor $= Color4 0.25 0.25 0.25 1
     shadeModel $= Flat
     depthFunc $= Just Lequal
 
@@ -36,14 +39,17 @@ main = do
     textureFilter  Texture2D $= ((Linear', Just Nearest), Linear')
 
     let texD = 256
-    pdataVec <- SV.replicateM (fromIntegral $ texD*texD*4) randomIO
-                :: IO (SV.Vector Float)
+    -- pdataVec <- SV.replicateM (fromIntegral $ texD*texD*4) randomIO
+    pdataVec <- SV.map (realToFrac :: Double -> GLfloat)
+             <$> goforit (genome { gnWidth = texD, gnHeight = texD })
+
+
     SV.unsafeWith pdataVec $ \ptr -> do
         let pdata = PixelData RGBA Float ptr
         -- Linear texture filtering requires mipmaps, and will silently
         -- fail if mipmaps aren't constructed.
         -- texImage2D Nothing NoProxy 0 RGBA' (TextureSize2D 64 64) 0 pdata
-        build2DMipmaps Texture2D RGBA' texD texD pdata
+        build2DMipmaps Texture2D RGBA' (fromIntegral texD) (fromIntegral texD) pdata
 
     textureBinding Texture2D $= Nothing
 
@@ -84,12 +90,6 @@ redisplayCB tex = do
         texCo2f 1 0 >> vertex3f 2.41421 (-1) (-1.41421)
     textureBinding Texture2D $= Nothing
     texture Texture2D $= Disabled
-
-    color $ Color3 0 0 (1 :: GLfloat)
-    loadIdentity
-    lookAt (Vertex3 0 0 5) (Vertex3 0 0 0) (Vector3 0 1 0)
-    scale 1 2 (3 :: GLfloat)
-    renderObject Wireframe (Cube 1)
 
     swapBuffers
 

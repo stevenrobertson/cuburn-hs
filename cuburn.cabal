@@ -16,6 +16,7 @@ Executable cuburn
   Main-is:          Main.hs
   Build-depends:    base > 3
                     , random
+                    , transformers
                     , GLUT
                     , StateVar
                     , SG
@@ -28,4 +29,5 @@ Executable cuburn
   Hs-Source-Dirs:   src
   Other-modules:    Flam3
   Build-tools:      hsc2hs
+  Ghc-options:      -O2
 

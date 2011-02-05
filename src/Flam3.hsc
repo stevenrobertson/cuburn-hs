@@ -1,10 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# CFILES flam3helpers.c #-}
 
-module Flam3
-    ( flam3Parse
-    , flam3Peek
-    ) where
+module Flam3 where
 
 #include <flam3.h>
 
@@ -13,11 +10,13 @@ import Foreign.C
 import Control.Applicative
 import Data.List (intercalate)
 
+import qualified Data.Vector as V
 import Data.ByteString (ByteString, useAsCString)
 import Data.SG
 import Variations
 
 type Point2 = Point2' Double
+type Matrix33 = Matrix33' Double
 
 peeki :: Ptr CInt -> IO Int
 peeki = fmap fromIntegral . peek
@@ -65,7 +64,7 @@ data InterpType = InterpLog deriving (Eq, Ord, Show)
 
 data PaletteEntry = PaletteEntry Double RGBAColor deriving (Eq, Ord, Show)
 -- | This newtype wrapper is pretty much just here for "Show"
-newtype PaletteList = PaletteList [PaletteEntry] deriving (Eq, Ord)
+newtype PaletteList = PaletteList (V.Vector PaletteEntry) deriving (Eq, Ord)
 instance Show PaletteList where show _ = "PaletteList \"*Omitted*\""
 
 instance Storable PaletteEntry where
@@ -75,28 +74,15 @@ instance Storable PaletteEntry where
         <$> (#peek flam3_palette_entry, index) ptr
         <*> (#peek flam3_palette_entry, color) ptr
 
-data AffineTransform = AffineTransform
-    { afXX  :: Double
-    , afXY  :: Double
-    , afXO  :: Double
-    , afYX  :: Double
-    , afYY  :: Double
-    , afYO  :: Double
-    } deriving (Eq, Ord, Show)
-instance Storable AffineTransform where
-    sizeOf _ = 6 * 8
-    alignment _ = 8 -- ?
-    peek ptr =
-        AffineTransform <$> pk 0 <*> pk 2 <*> pk 4 <*> pk 1 <*> pk 3 <*> pk 5
-        where pk = peekElemOff (castPtr ptr)
-
-foreign import ccall unsafe "flam3helpers.c flam3_dumb"
-    flam3Dumb :: Ptr XForm -> IO ()
+peekAffineToMatrix :: Ptr Double -> IO Matrix33
+peekAffineToMatrix ptr = do
+    [xx, yx, xy, yy, xo, yo] <- peekArray 6 ptr
+    return $ fromMatrixComponents [[xx, xy, xo], [yx, yy, yo], [0, 0, 1]]
 
 data XForm = XForm
     -- skipped: var
-    { xfAffine          :: AffineTransform
-    , xfPostAffine      :: Maybe AffineTransform
+    { xfProj            :: Matrix33
+    , xfProjPost        :: Maybe Matrix33
     , xfDensity         :: Double
     , xfColorCoord      :: Double
     , xfColorSpeed      :: Double
@@ -108,7 +94,7 @@ data XForm = XForm
     -- skipped: a hell of a lot of parameters (to be added later)
     , xfVars            :: [(Double, Variation)]
     -- skipped: motion_freq, motion_func, motion, num_motion
-    } deriving (Eq, Ord, Show)
+    } deriving (Eq, Show)
 instance Storable XForm where
     sizeOf _ = #size flam3_xform
     alignment _ = 16
@@ -120,9 +106,9 @@ instance Storable XForm where
 
         hasPost <- toBool <$> peeki ((#ptr flam3_xform, has_post) ptr)
         post <- if not hasPost then return Nothing
-                   else Just <$> (#peek flam3_xform, post) ptr
+            else Just <$> peekAffineToMatrix ((#ptr flam3_xform, post) ptr)
 
-        XForm   <$> (#peek flam3_xform, c) ptr
+        XForm   <$> peekAffineToMatrix ((#ptr flam3_xform, c) ptr)
                 <*> pure post
                 <*> peekd ((#ptr flam3_xform, density) ptr)
                 <*> peekd ((#ptr flam3_xform, color) ptr)
@@ -201,7 +187,7 @@ instance Storable Genome where
 
         Genome  <$> peekd ((#ptr flam3_genome, time) ptr)
                 <*> pure xforms' <*> pure final
-                <*> (PaletteList <$>
+                <*> (PaletteList . V.fromList <$>
                      peekArray 256 ((#ptr flam3_genome, palette) ptr))
                 <*> peekd ((#ptr flam3_genome, brightness) ptr)
                 <*> peekd ((#ptr flam3_genome, contrast) ptr)
