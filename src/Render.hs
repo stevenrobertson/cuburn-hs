@@ -52,8 +52,6 @@ a .* b = fromMatrixComponents $
 scale2D :: Num a => a -> a -> Matrix33' a
 scale2D x y = fromMatrixComponents [[x, 0, 0], [0, y, 0], [0, 0, 1]]
 
-goforit cp = accumulate cp (computeCamera cp)
-
 randomS :: Random a => State StdGen a
 randomS = do
     (v, gen) <- gets random
@@ -86,6 +84,26 @@ computeCamera cp =
 
 fuse = 100
 
+render :: Genome -> IO (SV.Vector Float)
+render cp = do
+    putStrLn $ "k1: " ++ show k1 ++ ", k2: " ++ show k2
+    accum <- accumulate cp cam
+    rslt <- MSV.new (4 * camBufSz cam)
+    flip mapM_ [0,4..4 * (camBufSz cam - 1)] $ \idx -> do
+        let alp = accum SV.! (idx+3)
+            ls = k1 * log (1.0 + 80 * alp * k2) / alp
+        MSV.write rslt (idx)   . realToFrac . (ls *) $ accum SV.!  idx
+        MSV.write rslt (idx+1) . realToFrac . (ls *) $ accum SV.! (idx+1)
+        MSV.write rslt (idx+2) . realToFrac . (ls *) $ accum SV.! (idx+2)
+        MSV.write rslt (idx+3) . realToFrac . (ls *) $ accum SV.! (idx+3)
+    SV.freeze rslt
+  where
+    cam = computeCamera cp
+    k1 = gnContrast cp * gnBrightness cp * 268.0 * (255/256)
+    area = (fromIntegral $ gnWidth cp * gnHeight cp) / (camPPU cam ** 2.0)
+    k2 = 1 / (gnContrast cp * gnBrightness cp * area *
+              (fromIntegral $ camNSamplesPerCP cam))
+
 accumulate :: Genome -> Camera -> IO (SV.Vector Double)
 accumulate cp cam = do
     buf <- MSV.replicate (4 * camBufSz cam) 0
@@ -93,13 +111,13 @@ accumulate cp cam = do
                         $ evalState (iterateIFS cp cam) (mkStdGen 1)
     SV.freeze buf
   where
-    storePt :: MSV.IOVector Double -> (Int, RGBAColor) -> IO ()
+
     storePt buf (idx, RGBAColor r g b a) = do
         let idx' = 4*idx
-        MSV.write buf  idx'    r
-        MSV.write buf (idx'+1) g
-        MSV.write buf (idx'+2) b
-        MSV.write buf (idx'+3) a
+        MSV.write buf  idx'    =<< fmap (r+) (MSV.read buf  idx')
+        MSV.write buf (idx'+1) =<< fmap (g+) (MSV.read buf (idx'+1))
+        MSV.write buf (idx'+2) =<< fmap (b+) (MSV.read buf (idx'+2))
+        MSV.write buf (idx'+3) =<< fmap (a+) (MSV.read buf (idx'+3))
 
 iterateIFS :: Genome -> Camera -> State StdGen [(Int, RGBAColor)]
 iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)

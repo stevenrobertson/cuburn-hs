@@ -14,8 +14,8 @@ import Render
 
 main = do
     Just (genp, ct) <- flam3Parse =<<
-        B.readFile "testdata/sierpinski.flame"
-        -- "testdata/electricsheep.244.23669.flam3"
+        B.readFile "testdata/electricsheep.244.23669.flam3"
+                    -- "testdata/sierpinski.flame"
     [genome] <- flam3Peek (genp, ct)
 
     (progname, args) <- getArgsAndInitialize
@@ -38,18 +38,16 @@ main = do
     textureBinding Texture2D $= Just texName
     textureFilter  Texture2D $= ((Linear', Just Nearest), Linear')
 
-    let texD = 256
-    -- pdataVec <- SV.replicateM (fromIntegral $ texD*texD*4) randomIO
-    pdataVec <- SV.map (realToFrac :: Double -> GLfloat)
-             <$> goforit (genome { gnWidth = texD, gnHeight = texD })
-
+    pdataVec <- render genome
 
     SV.unsafeWith pdataVec $ \ptr -> do
         let pdata = PixelData RGBA Float ptr
+            (w, h) = (fromIntegral $ gnWidth genome,
+                      fromIntegral $ gnHeight genome)
         -- Linear texture filtering requires mipmaps, and will silently
         -- fail if mipmaps aren't constructed.
         -- texImage2D Nothing NoProxy 0 RGBA' (TextureSize2D 64 64) 0 pdata
-        build2DMipmaps Texture2D RGBA' (fromIntegral texD) (fromIntegral texD) pdata
+        build2DMipmaps Texture2D RGBA' w h pdata
 
     textureBinding Texture2D $= Nothing
 
