@@ -40,6 +40,10 @@ instance Show Matrix3 where
 (*.) :: Matrix3 -> Point2 -> Point2
 (Matrix3 ((a,b,c), (d,e,f))) *. (x,y) = (a*x + b*y + c, d*x + e*y + f)
 
+-- | The identity matrix.
+idMat :: Matrix3
+idMat = Matrix3 ((1, 0, 0), (0, 1, 0))
+
 -- | A matrix that scales a point by a given factor in each dimension.
 scaleMat :: CDouble -> CDouble -> Matrix3
 scaleMat x y = Matrix3 ((x, 0, 0), (0, y, 0))
