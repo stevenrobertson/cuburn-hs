@@ -80,37 +80,44 @@ render cp = do
 accumulate :: Genome -> Camera -> IO (SV.Vector RGBAColor)
 accumulate cp cam = do
     buf <- SV.replicate (ci2I $ camBufSz cam) (RGBAColor 0 0 0 0)
-    mapM_ (storePt buf) . take (ci2I $ camNSamplesPerCP cam)
-                        =<< iterateIFS cp cam
+    let nsamps = ci2I (camNSamplesPerCP cam)
+    iter buf nsamps ((-100, -100), 0.5)
     SV.freeze buf
   where
-    storePt buf (idx, color) =
-        SV.write buf idx =<< fmap (addColor color) (SV.read buf idx)
+    addColor' s (RGBAColor r g b _) (RGBAColor x y z w) =
+        RGBAColor (r*s+x) (g*s+y) (b*s+z) (s+w)
+    storePt buf idx sca col =
+        SV.write buf idx =<< fmap (addColor' sca col) (SV.read buf idx)
+    iter buf 0 _ = return ()
+    iter buf n p = do
+        (idx, (sca, col), p') <- iterateIFS cp cam p
+        storePt buf idx sca col
+        iter buf (n-1) p'
 
-iterateIFS :: Genome -> Camera -> IO [(Int, RGBAColor)]
-iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)
+newPoint = (,) <$> ((,) <$> randomRIO (-1, 1) <*> randomRIO (-1, 1))
+               <*> randomRIO (0, 1)
+
+iterateIFS :: Genome -> Camera -> (Point2, CDouble)
+           -> IO (Int, (CDouble, RGBAColor), (Point2, CDouble))
+iterateIFS cp cam startPt = go 0 startPt
   where
-    loop p = do
-        (rs, p') <- go 0 p
-        (rs:) <$> loop p'
-    newPoint =
-        (,) <$> ((,) <$> randomRIO (-1, 1) <*> randomRIO (-1, 1))
-            <*> randomRIO (0, 1)
-    densitySum = sum . map xfDensity $ gnXForms cp
-    go 5 _ = go (-3) =<< newPoint
+    go 5 _ = go (-3 :: Int) =<< newPoint
     go consecBad (pt, color) = do
-        xf <- chooseXForm cp densitySum
+        xf <- chooseXForm cp
         (midx, pt', col') <- applyXForm xf cam pt color
         if consecBad < 0 || isNothing midx
             then go (consecBad + 1) (pt', col')
-            else return ((ci2I $ fromJust midx, lookupColor xf col'), (pt', col'))
+            else return $!
+                    ( ci2I $ fromJust midx
+                    , lookupColor xf col'
+                    , (pt', col') )
     lookupColor xf col =
         let PaletteList pes = gnPalette cp
             colIdx = truncate $ col * (fromIntegral $ V.length pes)
-            PaletteEntry _ (RGBAColor r g b _) = pes V.! colIdx
+            PaletteEntry _ col' = pes V.! colIdx
             opa = xfOpacity xf
             vis = if opa == 0 then 0 else 10 ** (negate $ logBase 2 (1.0/opa))
-        in  RGBAColor (r*vis) (g*vis) (b*vis) (vis)
+        in  (vis, col')
 
 applyXForm :: XForm -> Camera -> Point2 -> CDouble
            -> IO (Maybe CInt, Point2, CDouble)
@@ -125,8 +132,8 @@ applyXForm xf cam pt color = do
         isValidIdx = idx >= 0 && idx < (camBufSz cam)
     return $ (if isValidIdx then Just idx else Nothing, pt', color')
 
-chooseXForm :: Genome -> CDouble -> IO XForm
-chooseXForm cp dsum = go (gnXForms cp) `fmap` randomRIO (0, dsum)
+chooseXForm :: Genome -> IO XForm
+chooseXForm cp = go (gnXForms cp) `fmap` randomRIO (0, gnXFormTotalDensity cp)
   where
     go (x:[]) _ = x
     go (x:xs) val = if val < xfDensity x then x else go xs (val - xfDensity x)
