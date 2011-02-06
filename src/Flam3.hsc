@@ -8,15 +8,12 @@ module Flam3 where
 import Foreign
 import Foreign.C
 import Control.Applicative
-import Data.List (intercalate)
 
 import qualified Data.Vector as V
 import Data.ByteString (ByteString, useAsCString)
-import Data.SG
-import Variations
 
-type Point2 = Point2' Double
-type Matrix33 = Matrix33' Double
+import Variations
+import Matrix
 
 peeki :: Ptr CInt -> IO Int
 peeki = fmap fromIntegral . peek
@@ -82,15 +79,15 @@ instance Storable PaletteEntry where
         <$> (#peek flam3_palette_entry, index) ptr
         <*> (#peek flam3_palette_entry, color) ptr
 
-peekAffineToMatrix :: Ptr Double -> IO Matrix33
+peekAffineToMatrix :: Ptr CDouble -> IO Matrix3
 peekAffineToMatrix ptr = do
     [xx, yx, xy, yy, xo, yo] <- peekArray 6 ptr
-    return $ fromMatrixComponents [[xx, xy, xo], [yx, yy, yo], [0, 0, 1]]
+    return $ Matrix3 ((xx, xy, xo), (yx, yy, yo))
 
 data XForm = XForm
     -- skipped: var
-    { xfProj            :: Matrix33
-    , xfProjPost        :: Maybe Matrix33
+    { xfProj            :: Matrix3
+    , xfProjPost        :: Maybe Matrix3
     , xfDensity         :: Double
     , xfColorCoord      :: Double
     , xfColorSpeed      :: Double
@@ -227,9 +224,7 @@ instance Storable Genome where
         getPalMode :: CInt -> PaletteMode
         getPalMode (#const flam3_palette_mode_step) = PaletteStep
         getPalMode (#const flam3_palette_mode_linear) = PaletteLinear
-        readPoint2 ptr' = do
-            x:y:[] <- peekArray 2 ptr'
-            return $ Point2 (x, y)
+        readPoint2 p = (,) <$> peekElemOff p 0 <*> peekElemOff p 1
 
 foreign import ccall unsafe "flam3.h flam3_parse_xml2"
     flam3Parse' :: CString -> CString -> CInt -> Ptr CInt -> IO (Ptr Genome)

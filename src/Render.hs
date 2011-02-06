@@ -16,15 +16,16 @@ import Control.Monad.Trans.State
 import Data.Traversable (Traversable)
 import Data.Bits
 import Data.Maybe
+import Foreign.C.Types
 import System.Random
 import Debug.Trace
 
-import Data.SG
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as SV
 import qualified Data.Vector.Storable.Mutable as MSV
 
 import Flam3
+import Matrix
 import Variations
 
 data Camera = Camera
@@ -32,27 +33,8 @@ data Camera = Camera
     , camNSamplesPerCP  :: Int
     , camBufSz          :: Int
     , camStride         :: Int
-    , camProj           :: Matrix33
+    , camProj           :: Matrix3
     } deriving (Show)
-
--- Hint for using matrix transforms: they stack like function applications.
---   addCenter . rotate . subCenter $ point
---   addCenterMat .* rotateMat .* subCenterMat `mul` point
--- Also, matrixComponents returns a list of rows, and translation's on the end
--- of each row. This *prints* the same way as the OpenGL docs, but needs to be
--- transposed (I think?)
--- Also also, `multMatrixGen` doesn't do a perspective divide.
-
--- SG doesn't provide a matrix-to-matrix multiply.
--- typesig is overly specific, but unlikely to need otherwise
-(.*) :: (Num a, Applicative c, Traversable c)
-     => SquareMatrix c a -> SquareMatrix c a -> SquareMatrix c a
-a .* b = fromMatrixComponents $
-    [[sum [x*y | (x,y) <- zip xs ys] | ys <- matrixComponents (transpose b)]
-     | xs <- matrixComponents a]
-
-scale2D :: Num a => a -> a -> Matrix33' a
-scale2D x y = fromMatrixComponents [[x, 0, 0], [0, y, 0], [0, 0, 1]]
 
 randomS :: Random a => State StdGen a
 randomS = do
@@ -71,15 +53,11 @@ computeCamera :: Genome -> Camera
 computeCamera cp =
     let (w, h) = (gnWidth cp, gnHeight cp)
         (w', h') = (fromIntegral w, fromIntegral h)
-        negPoint (Point2 (x, y)) = Point2 (-x, -y)
-        rctr = gnRotCenter cp
         ppu = gnPixelsPerUnit cp
-        proj = traces $ scale2D (0.5 * ppu) (0.5 * ppu)
-            .* translate2D (Point2 (1, 1))
-            .* translate2D (negPoint $ gnCenter cp)
-            .* translate2D rctr
-            .* rotateZaxis (gnRotate cp * 2 / pi)
-            .* translate2D (negPoint rctr)
+        proj = traces $ scaleMat (0.5 * ppu) (0.5 * ppu)
+            .* translateMat (1, 1)
+            .* translateMat (negPt $ gnCenter cp)
+            .* rotateMat (gnRotCenter cp) (gnRotate cp * 2 / pi)
         qual = round $ w' * h' * gnSampleDensity cp
              -- / (fromIntegral $ gnNTemporalSamples cp)
     in  Camera (gnPixelsPerUnit cp) qual (w*h) w proj
@@ -117,7 +95,7 @@ iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)
         (rs, p') <- go 0 p
         (rs:) <$> loop p'
     newPoint =
-        (,) <$> (fmap Point2 $ (,) <$> randomRS (-1, 1) <*> randomRS (-1, 1))
+        (,) <$> ((,) <$> randomRS (-1, 1) <*> randomRS (-1, 1))
             <*> randomRS (0, 1)
     densitySum = sum . map xfDensity $ gnXForms cp
     go 5 _ = go (-3) =<< newPoint
@@ -140,11 +118,10 @@ applyXForm :: XForm -> Camera -> Point2 -> Double
 applyXForm xf cam pt color = do
     let s = xfColorSpeed xf
         color' = color * (1-s) + (xfColorCoord xf) * s
-        ptxf = multMatrixGen (xfProj xf) pt
-        addPt (Point2 (x1, y1)) (Point2 (x2, y2)) = Point2 (x1+x2, y1+y2)
-    pt' <- fmap (maybe id multMatrixGen (xfProjPost xf) . foldl1 addPt)
+        ptxf = xfProj xf *. pt
+    pt' <- fmap (maybe id (*.) (xfProjPost xf) . foldl1 addPt)
          . mapM (uncurry (applyVar ptxf)) $ xfVars xf
-    let idx = let Point2 (x, y) = multMatrixGen (camProj cam) pt'
+    let idx = let (x, y) = camProj cam *. pt'
               in  round y * camStride cam + round x
         isValidIdx = idx >= 0 && idx < (camBufSz cam)
     return $ (if isValidIdx then Just idx else Nothing, pt', color')
@@ -155,8 +132,8 @@ chooseXForm cp dsum = go (gnXForms cp) `fmap` randomRS (0, dsum)
     go (x:[]) _ = x
     go (x:xs) val = if val < xfDensity x then x else go xs (val - xfDensity x)
 
-applyVar (Point2 (x, y)) wgt var =
-    Point2 <$> case var of
+applyVar (x, y) wgt var =
+    case var of
         Linear       -> return (x*wgt, y*wgt)
         Spherical    -> return (x*r2, y*r2)
         Handkerchief -> return ( x * wgt * rad * sin (at + rad)

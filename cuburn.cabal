@@ -19,7 +19,6 @@ Executable cuburn
                     , transformers
                     , GLUT
                     , StateVar
-                    , SG
                     , vector
                     , bytestring
                     , pretty-show
