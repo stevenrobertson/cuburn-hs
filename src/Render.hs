@@ -11,8 +11,8 @@ module Render where
  - If you're part of the SD team, don't read the rest of this file just yet!
  -}
 
+import Control.Arrow (first)
 import Control.Applicative
-import Control.Monad.Trans.State
 import Data.Traversable (Traversable)
 import Data.Bits
 import Data.Maybe
@@ -21,31 +21,24 @@ import System.Random
 import Debug.Trace
 
 import qualified Data.Vector as V
-import qualified Data.Vector.Storable as SV
-import qualified Data.Vector.Storable.Mutable as MSV
+import qualified Data.Vector.Storable as SV hiding (replicate)
+import qualified Data.Vector.Storable.Mutable as SV
 
 import Flam3
 import Matrix
 import Variations
 
 data Camera = Camera
-    { camPPU            :: Double
-    , camNSamplesPerCP  :: Int
-    , camBufSz          :: Int
-    , camStride         :: Int
+    { camPPU            :: CDouble
+    , camNSamplesPerCP  :: CInt
+    , camBufSz          :: CInt
+    , camStride         :: CInt
     , camProj           :: Matrix3
     } deriving (Show)
 
-randomS :: Random a => State StdGen a
-randomS = do
-    (v, gen) <- gets random
-    put gen
-    return v
-
-randomRS bounds = do
-    (v, gen) <- gets $ randomR bounds
-    put gen
-    return v
+instance Random CDouble where
+    randomR (lo, hi) = first d2CD . randomR (realToFrac lo, realToFrac hi)
+    random = first d2CD . random
 
 traces x = trace (show x) x
 
@@ -64,13 +57,19 @@ computeCamera cp =
 
 fuse = 100
 
-render :: Genome -> IO (SV.Vector (RGBAColor Float))
+render :: Genome -> IO (SV.Vector CFloat)
 render cp = do
     putStrLn $ "k1: " ++ show k1 ++ ", k2: " ++ show k2
     accum <- accumulate cp cam
-    return $ flip SV.map accum $ \col@(RGBAColor _ _ _ a) ->
-        let ls = k1 * log (1.0 + 256 * a * k2) / a
-        in  cvtType $ scaleColor col ls
+    return . flip SV.concatMap accum $ \col@(RGBAColor r g b a) ->
+        let ls' = k1 * log (1.0 + 256 * a * k2) / a
+        in  SV.create $ do
+                v <- SV.new 4
+                SV.write v 0 . realToFrac $ r * ls'
+                SV.write v 1 . realToFrac $ g * ls'
+                SV.write v 2 . realToFrac $ b * ls'
+                SV.write v 3 . realToFrac $ a * ls'
+                return v
   where
     cam = computeCamera cp
     k1 = gnContrast cp * gnBrightness cp * 268.0 * (255/256)
@@ -78,25 +77,25 @@ render cp = do
     k2 = 1 / (gnContrast cp * gnBrightness cp * area *
               (fromIntegral $ camNSamplesPerCP cam))
 
-accumulate :: Genome -> Camera -> IO (SV.Vector (RGBAColor Double))
+accumulate :: Genome -> Camera -> IO (SV.Vector RGBAColor)
 accumulate cp cam = do
-    buf <- MSV.replicate (camBufSz cam) (RGBAColor 0 0 0 0)
-    mapM_ (storePt buf) . take (camNSamplesPerCP cam)
-                        $ evalState (iterateIFS cp cam) (mkStdGen 1)
+    buf <- SV.replicate (ci2I $ camBufSz cam) (RGBAColor 0 0 0 0)
+    mapM_ (storePt buf) . take (ci2I $ camNSamplesPerCP cam)
+                        =<< iterateIFS cp cam
     SV.freeze buf
   where
     storePt buf (idx, color) =
-        MSV.write buf idx =<< fmap (addColor color) (MSV.read buf idx)
+        SV.write buf idx =<< fmap (addColor color) (SV.read buf idx)
 
-iterateIFS :: Genome -> Camera -> State StdGen [(Int, RGBAColor Double)]
+iterateIFS :: Genome -> Camera -> IO [(Int, RGBAColor)]
 iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)
   where
     loop p = do
         (rs, p') <- go 0 p
         (rs:) <$> loop p'
     newPoint =
-        (,) <$> ((,) <$> randomRS (-1, 1) <*> randomRS (-1, 1))
-            <*> randomRS (0, 1)
+        (,) <$> ((,) <$> randomRIO (-1, 1) <*> randomRIO (-1, 1))
+            <*> randomRIO (0, 1)
     densitySum = sum . map xfDensity $ gnXForms cp
     go 5 _ = go (-3) =<< newPoint
     go consecBad (pt, color) = do
@@ -104,7 +103,7 @@ iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)
         (midx, pt', col') <- applyXForm xf cam pt color
         if consecBad < 0 || isNothing midx
             then go (consecBad + 1) (pt', col')
-            else return ((fromJust midx, lookupColor xf col'), (pt', col'))
+            else return ((ci2I $ fromJust midx, lookupColor xf col'), (pt', col'))
     lookupColor xf col =
         let PaletteList pes = gnPalette cp
             colIdx = truncate $ col * (fromIntegral $ V.length pes)
@@ -113,8 +112,8 @@ iterateIFS cp cam = drop fuse <$> (loop =<< newPoint)
             vis = if opa == 0 then 0 else 10 ** (negate $ logBase 2 (1.0/opa))
         in  RGBAColor (r*vis) (g*vis) (b*vis) (vis)
 
-applyXForm :: XForm -> Camera -> Point2 -> Double
-           -> State StdGen (Maybe Int, Point2, Double)
+applyXForm :: XForm -> Camera -> Point2 -> CDouble
+           -> IO (Maybe CInt, Point2, CDouble)
 applyXForm xf cam pt color = do
     let s = xfColorSpeed xf
         color' = color * (1-s) + (xfColorCoord xf) * s
@@ -126,8 +125,8 @@ applyXForm xf cam pt color = do
         isValidIdx = idx >= 0 && idx < (camBufSz cam)
     return $ (if isValidIdx then Just idx else Nothing, pt', color')
 
-chooseXForm :: Genome -> Double -> State StdGen XForm
-chooseXForm cp dsum = go (gnXForms cp) `fmap` randomRS (0, dsum)
+chooseXForm :: Genome -> CDouble -> IO XForm
+chooseXForm cp dsum = go (gnXForms cp) `fmap` randomRIO (0, dsum)
   where
     go (x:[]) _ = x
     go (x:xs) val = if val < xfDensity x then x else go xs (val - xfDensity x)
@@ -145,7 +144,7 @@ applyVar (x, y) wgt var =
                 m1 = n1 * n1 * n1 * rad
             in  return ( wgt * (m0 + m1), wgt * (m0 - m1) )
         Julia        -> do
-            rnd <- randomS
+            rnd <- randomIO
             let offset = if rnd .&. (0x1 :: Int) == 1 then pi else 0
                 at' = 0.5 * at + offset
                 r = wgt * sqrt rad
