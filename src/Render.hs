@@ -62,7 +62,8 @@ render cp = do
     putStrLn $ "k1: " ++ show k1 ++ ", k2: " ++ show k2
     accum <- accumulate cp cam
     return . flip SV.concatMap accum $ \col@(RGBAColor r g b a) ->
-        let ls' = k1 * log (1.0 + 256 * a * k2) / a
+        let ls = k1 * log (1.0 + 256 * a * k2) / a
+            ls' = gammaAdjust (ls*a) / a
         in  SV.create $ do
                 v <- SV.new 4
                 SV.write v 0 . realToFrac $ r * ls'
@@ -76,6 +77,15 @@ render cp = do
     area = (fromIntegral $ gnWidth cp * gnHeight cp) / (camPPU cam ** 2.0)
     k2 = 1 / (gnContrast cp * gnBrightness cp * area *
               (fromIntegral $ camNSamplesPerCP cam))
+    gam = gnGamma cp
+    lin = gnGammaThreshold cp
+    gammaAdjust dnorm =
+        if dnorm > 0
+           then if dnorm < lin
+                   then let frac = dnorm / lin
+                        in frac * ((1 - frac) * (lin ** gam) + dnorm ** gam)
+                   else dnorm ** gam
+           else 0
 
 accumulate :: Genome -> Camera -> IO (SV.Vector RGBAColor)
 accumulate cp cam = do
