@@ -14,8 +14,8 @@ import Render
 
 main = do
     Just (genp, ct) <- flam3Parse =<<
-        B.readFile "testdata/electricsheep.244.23669.flam3"
-                    -- "testdata/sierpinski.flame"
+        B.readFile --"testdata/electricsheep.244.23669.flam3"
+                    "testdata/sierpinski.flame"
     [genome] <- flam3Peek (genp, ct)
 
     (progname, args) <- getArgsAndInitialize
@@ -54,6 +54,7 @@ main = do
     reshapeCallback $= Just reshapeCB
     displayCallback $= redisplayCB texName
     keyboardMouseCallback $= Just keyMouseCB
+    actionOnWindowClose $= MainLoopReturns
 
     mainLoop
 

@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE ForeignFunctionInterface, ScopedTypeVariables #-}
 {-# CFILES flam3helpers.c #-}
 
 module Flam3 where
@@ -23,23 +23,30 @@ peeki = fmap fromIntegral . peek
 peekd :: Ptr CDouble -> IO Double
 peekd = fmap realToFrac . peek
 
-data RGBColor = RGBColor Double Double Double deriving (Eq, Ord, Show)
-data RGBAColor = RGBAColor Double Double Double Double deriving (Eq, Ord, Show)
+data Floating a => RGBColor  a = RGBColor  !a !a !a deriving (Eq, Ord, Show)
+data Floating a => RGBAColor a = RGBAColor !a !a !a !a deriving (Eq, Ord, Show)
 
-instance Storable RGBColor where
-    sizeOf _ = 24
-    alignment _ = 24
-    peek ptr = RGBColor <$> peekByteOff ptr 0
-                        <*> peekByteOff ptr 8
-                        <*> peekByteOff ptr 16
+instance (Floating a, Storable a) => Storable (RGBColor a) where
+    sizeOf _ = 3 * sizeOf (undefined :: a)
+    alignment _ = alignment (undefined :: a)
+    peek ptr = do
+        [r,g,b] <- peekArray 3 (castPtr ptr)
+        return $! RGBColor r g b
+    poke ptr (RGBColor r g b) = pokeArray (castPtr ptr) [r, g, b]
 
-instance Storable RGBAColor where
-    sizeOf _ = 32
-    alignment _ = 32
-    peek ptr = RGBAColor <$> peekByteOff ptr 0
-                         <*> peekByteOff ptr 8
-                         <*> peekByteOff ptr 16
-                         <*> peekByteOff ptr 24
+instance (Floating a, Storable a) => Storable (RGBAColor a) where
+    sizeOf _ = 4 * sizeOf (undefined :: a)
+    alignment _ = alignment (undefined :: a)
+    peek ptr = do
+        [r,g,b,a] <- peekArray 4 (castPtr ptr)
+        return $! RGBAColor r g b a
+    poke ptr (RGBAColor r g b a) = pokeArray (castPtr ptr) [r, g, b, a]
+
+scaleColor (RGBAColor r g b a) s = RGBAColor (r*s) (g*s) (b*s) (a*s)
+addColor (RGBAColor r g b a) (RGBAColor x y z w) =
+    RGBAColor (r+x) (g+y) (b+z) (a+w)
+cvtType (RGBAColor r g b a) =
+    RGBAColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
 -- WARNING: manually transcribed from filters.h, which is not exported
 data FilterType = Gaussian
@@ -62,7 +69,8 @@ data PaletteMode = PaletteLinear | PaletteStep deriving (Eq, Ord, Show)
 data InterpType = InterpLog deriving (Eq, Ord, Show)
 
 
-data PaletteEntry = PaletteEntry Double RGBAColor deriving (Eq, Ord, Show)
+data PaletteEntry = PaletteEntry Double (RGBAColor Double)
+                    deriving (Eq, Ord, Show)
 -- | This newtype wrapper is pretty much just here for "Show"
 newtype PaletteList = PaletteList (V.Vector PaletteEntry) deriving (Eq, Ord)
 instance Show PaletteList where show _ = "PaletteList \"*Omitted*\""
@@ -147,7 +155,7 @@ data Genome = Genome
     , gnRotate          :: Double
     , gnVibrancy        :: Double
     -- skipped: hue_rotation
-    , gnBackground      :: RGBColor
+    , gnBackground      :: RGBColor Double
     , gnZoom            :: Double
     , gnPixelsPerUnit   :: Double
     , gnSpatialFiltRadius :: Double
@@ -177,7 +185,6 @@ instance Storable Genome where
                   . peeki $ (#ptr flam3_genome, final_xform_enable) ptr
         finalIdx <- peeki $ (#ptr flam3_genome, final_xform_index) ptr
         xforms <- peekArray nxforms =<< (#peek flam3_genome, xform) ptr
-
         let xforms' = if useFinal
                 then if finalIdx == nxforms - 1
                         then take (finalIdx - 1) xforms
