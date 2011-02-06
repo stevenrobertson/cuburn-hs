@@ -47,8 +47,8 @@ computeCamera cp =
     let (w, h) = (gnWidth cp, gnHeight cp)
         (w', h') = (fromIntegral w, fromIntegral h)
         ppu = gnPixelsPerUnit cp
-        proj = traces $ scaleMat (0.5 * ppu) (0.5 * ppu)
-            .* translateMat (1, 1)
+        proj = traces $ translateMat (0.5 * w', 0.5 * h')
+            .* scaleMat ppu ppu
             .* translateMat (negPt $ gnCenter cp)
             .* rotateMat (gnRotCenter cp) (gnRotate cp * 2 / pi)
         qual = round $ w' * h' * gnSampleDensity cp

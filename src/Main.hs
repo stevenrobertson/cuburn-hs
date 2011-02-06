@@ -78,10 +78,10 @@ redisplayCB tex = do
     textureBinding Texture2D $= Just tex
 
     renderPrimitive Quads $ do
-        texCo2f 0 0 >> vertex3f (-2) (-1) 0
-        texCo2f 0 1 >> vertex3f (-2)   1  0
-        texCo2f 1 1 >> vertex3f   0    1  0
-        texCo2f 1 0 >> vertex3f   0  (-1) 0
+        texCo2f 0 1 >> vertex3f (-2) (-1) 0
+        texCo2f 0 0 >> vertex3f (-2)   1  0
+        texCo2f 1 0 >> vertex3f   0    1  0
+        texCo2f 1 1 >> vertex3f   0  (-1) 0
 
         texCo2f 0 0 >> vertex3f 1 (-1) 0
         texCo2f 0 1 >> vertex3f 1   1  0
