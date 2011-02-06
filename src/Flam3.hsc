@@ -136,12 +136,10 @@ instance Storable XForm where
         let activeWeights = filter ((/= 0) . fst) $ zip weights [0..]
         vars <- mapM (\(w,i) -> (,) w <$> getVar i) activeWeights
 
-        hasPost <- iToBool <$> (#peek flam3_xform, has_post) ptr
-        post <- if not hasPost then return Nothing
-            else Just <$> peekAffineToMatrix ((#ptr flam3_xform, post) ptr)
+        post <- peekAffineToMatrix ((#ptr flam3_xform, post) ptr)
 
         XForm   <$> peekAffineToMatrix ((#ptr flam3_xform, c) ptr)
-                <*> pure post
+                <*> pure (if post == idMat then Nothing else Just post)
                 <*> (#peek flam3_xform, density) ptr
                 <*> (#peek flam3_xform, color) ptr
                 <*> (#peek flam3_xform, color_speed) ptr
