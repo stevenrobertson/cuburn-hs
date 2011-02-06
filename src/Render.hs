@@ -135,11 +135,12 @@ applyXForm xf cam pt color = do
     let s = xfColorSpeed xf
         color' = color * (1-s) + (xfColorCoord xf) * s
         ptxf = xfProj xf *. pt
-    pt' <- fmap (maybe id (*.) (xfProjPost xf) . foldl1 addPt)
-         . mapM (uncurry (applyVar ptxf)) $ xfVars xf
-    let idx = let (x, y) = camProj cam *. pt'
-              in  round y * camStride cam + round x
-        isValidIdx = idx >= 0 && idx < (camBufSz cam)
+    pt' <- fmap (foldl1 addPt) . mapM (uncurry (applyVar ptxf)) $ xfVars xf
+    let (x, y) = camProj cam *. (maybe id (*.) (xfProjPost xf) $ pt')
+        x' = round x
+        idx = round y * camStride cam + x'
+        isValidIdx = idx >= 0 && idx < (camBufSz cam) &&
+                     x' >= 0  && x' < (camStride cam)
     return $ (if isValidIdx then Just idx else Nothing, pt', color')
 
 chooseXForm :: Genome -> IO XForm
@@ -167,7 +168,7 @@ applyVar (x, y) wgt var =
                 r = wgt * sqrt rad
             return (r * cos at', r * sin at')
   where
-    at = atan2 y x
+    at = atan2 x y
     r2 = wgt / (x * x + y * y + 1.0e-6)
     rad = sqrt (x * x + y * y)
 
