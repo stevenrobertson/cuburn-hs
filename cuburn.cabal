@@ -28,6 +28,6 @@ Executable cuburn
   Hs-Source-Dirs:   src
   Other-modules:    Flam3
   Build-tools:      hsc2hs
-  Ghc-options:      -O2 -Wall
-  Ghc-prof-options: -auto-all -O2 -rtsopts -prof -Wall
+  Ghc-options:      -O2 -Wall -threaded
+  Ghc-prof-options: -auto-all -O2 -rtsopts -prof -Wall -threaded -fllvm
 

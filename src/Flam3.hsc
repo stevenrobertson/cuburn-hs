@@ -1,5 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface, ScopedTypeVariables #-}
 {-# CFILES flam3helpers.c #-}
+{-# OPTIONS_GHC -fasm #-}
 
 module Flam3 where
 
