@@ -134,8 +134,9 @@ applyXForm xf cam pt color = do
     let s = xfColorSpeed xf
         color' = color * (1-s) + (xfColorCoord xf) * s
         ptxf = xfProj xf *. pt
-    pt' <- fmap (foldl1 addPt) . mapM (uncurry (applyVar ptxf)) $ xfVars xf
-    let (x, y) = camProj cam *. (maybe id (*.) (xfProjPost xf) $ pt')
+    pt' <- fmap (maybe id (*.) (xfProjPost xf) . foldl1 addPt)
+         . mapM (uncurry (applyVar ptxf)) $ xfVars xf
+    let (x, y) = camProj cam *. pt'
         x' = round x
         idx = round y * camStride cam + x'
         isValidIdx = idx >= 0 && idx < (camBufSz cam) &&
