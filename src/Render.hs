@@ -50,7 +50,7 @@ computeCamera cp =
         proj = traces $ translateMat (0.5 * w', 0.5 * h')
             .* scaleMat ppu ppu
             .* translateMat (negPt $ gnCenter cp)
-            .* rotateMat (gnRotCenter cp) (gnRotate cp * 2 / pi)
+            .* rotateMat (gnRotCenter cp) (gnRotate cp * 2 * pi / 360)
         qual = round $ w' * h' * gnSampleDensity cp
              -- / (fromIntegral $ gnNTemporalSamples cp)
     in  Camera (gnPixelsPerUnit cp) qual (w*h) w proj
