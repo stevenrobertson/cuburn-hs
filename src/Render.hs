@@ -59,8 +59,9 @@ fuse = 100
 
 render :: Genome -> IO (SV.Vector CFloat)
 render cp = do
-    putStrLn $ "k1: " ++ show k1 ++ ", k2: " ++ show k2
-    accum <- accumulate cp cam
+    buf <- SV.replicate (ci2I $ camBufSz cam) (RGBAColor 0 0 0 0)
+    accumulate buf cp cam
+    accum <- SV.freeze buf
     return . flip SV.concatMap accum $ \col@(RGBAColor r g b a) ->
         let ls = k1 * log (1.0 + 256 * a * k2) / a
             ls' = gammaAdjust (ls*a) / a
@@ -87,22 +88,20 @@ render cp = do
                    else dnorm ** gam
            else 0
 
-accumulate :: Genome -> Camera -> IO (SV.Vector RGBAColor)
-accumulate cp cam = do
-    buf <- SV.replicate (ci2I $ camBufSz cam) (RGBAColor 0 0 0 0)
+accumulate :: SV.IOVector RGBAColor -> Genome -> Camera -> IO ()
+accumulate buf cp cam = do
     let nsamps = ci2I (camNSamplesPerCP cam)
-    iter buf nsamps ((-100, -100), 0.5)
-    SV.freeze buf
+    iter nsamps ((-100, -100), 0.5)
   where
     addColor' s (RGBAColor r g b _) (RGBAColor x y z w) =
         RGBAColor (r*s+x) (g*s+y) (b*s+z) (s+w)
     storePt buf idx sca col =
         SV.write buf idx =<< fmap (addColor' sca col) (SV.read buf idx)
-    iter buf 0 _ = return ()
-    iter buf n p = do
+    iter 0 _ = return ()
+    iter n p = do
         (idx, (sca, col), p') <- iterateIFS cp cam p
         storePt buf idx sca col
-        iter buf (n-1) p'
+        iter (n-1) p'
 
 newPoint = (,) <$> ((,) <$> randomRIO (-1, 1) <*> randomRIO (-1, 1))
                <*> randomRIO (0, 1)
