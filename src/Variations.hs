@@ -5,5 +5,6 @@ data Variation = Linear
                | Handkerchief
                | Ex
                | Julia
+               | Eyefish
                deriving (Eq, Ord, Show)
 

@@ -154,6 +154,7 @@ instance Storable XForm where
         getVar (#const VAR_HANDKERCHIEF) = return Handkerchief
         getVar (#const VAR_EX) = return Ex
         getVar (#const VAR_JULIA) = return Julia
+        getVar (#const VAR_EYEFISH) = return Eyefish
         getVar i = error $ "Could not identify variation " ++ show i
 
 data Genome = Genome

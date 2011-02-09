@@ -1,4 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, FlexibleInstances, UndecidableInstances,
+             ScopedTypeVariables #-}
 
 module Render where
 
@@ -13,9 +14,12 @@ module Render where
 
 import Control.Arrow (first)
 import Control.Applicative
+import Control.Monad.Trans.State
 import Data.Traversable (Traversable)
 import Data.Bits
+import Data.Word
 import Data.Maybe
+import Foreign
 import Foreign.C.Types
 import System.Random
 import Debug.Trace
@@ -167,6 +171,7 @@ applyVar (x, y) wgt var =
                 at' = 0.5 * at + offset
                 r = wgt * sqrt rad
             return (r * cos at', r * sin at')
+        Eyefish     -> let r = wgt * 2.0 / (1 + rad) in return (x*r, y*r)
   where
     at = atan2 x y
     r2 = wgt / (x * x + y * y + 1.0e-6)
