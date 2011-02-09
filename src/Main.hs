@@ -14,7 +14,8 @@ import Render
 
 main = do
     Just (genp, ct) <- flam3Parse =<<
-        B.readFile --"testdata/electricsheep.244.23669.flam3"
+        B.readFile  -- "testdata/electricsheep.244.23669.flam3"
+                    -- "testdata/electricsheep.244.33317.flam3"
                     "testdata/sierpinski.flame"
     [genome] <- flam3Peek (genp, ct)
 
@@ -35,28 +36,37 @@ main = do
     depthFunc $= Just Lequal
 
     [texName] <- genObjectNames 1
-    textureBinding Texture2D $= Just texName
-    textureFilter  Texture2D $= ((Linear', Just Nearest), Linear')
-
-    pdataVec <- render genome
-
-    SV.unsafeWith pdataVec $ \ptr -> do
-        let pdata = PixelData RGBA Float ptr
-            (w, h) = (fromIntegral $ gnWidth genome,
-                      fromIntegral $ gnHeight genome)
-        -- Linear texture filtering requires mipmaps, and will silently
-        -- fail if mipmaps aren't constructed.
-        -- texImage2D Nothing NoProxy 0 RGBA' (TextureSize2D 64 64) 0 pdata
-        build2DMipmaps Texture2D RGBA' w h pdata
-
-    textureBinding Texture2D $= Nothing
+    withTex2D texName $ do
+        textureFilter Texture2D $= ((Linear', Just Nearest), Linear')
 
     reshapeCallback $= Just reshapeCB
     displayCallback $= redisplayCB texName
     keyboardMouseCallback $= Just keyMouseCB
     actionOnWindowClose $= MainLoopReturns
 
+    -- for now, force genomes to be square and low quality.
+    let genome' = genome { gnWidth = 512, gnHeight = 512, gnSampleDensity = 5 }
+
+    forkIO $ do
+        threadDelay 10000 -- allow time for mainloop to start
+        pdataVec <- render genome'
+        addTimerCallback 0 $ do
+            SV.unsafeWith pdataVec $ \ptr -> do
+                let pdata = PixelData RGBA Float ptr
+                    (w, h) = (fromIntegral $ gnWidth genome',
+                              fromIntegral $ gnHeight genome')
+                -- Linear texture filtering requires mipmaps, and will silently
+                -- fail if mipmaps aren't constructed.
+                withTex2D texName $
+                    build2DMipmaps Texture2D RGBA' w h pdata
+                postRedisplay Nothing
     mainLoop
+
+withTex2D :: TextureObject -> IO () -> IO ()
+withTex2D tex f = do
+    textureBinding Texture2D $= Just tex
+    f
+    textureBinding Texture2D $= Nothing
 
 reshapeCB :: Size -> IO ()
 reshapeCB size@(Size w h) = do
